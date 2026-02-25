@@ -1,0 +1,163 @@
+local DataService = {}
+
+local playerData = {}
+
+local CURRENT_VERSION = 1
+
+local DEFAULT_DATA = {
+	DataVersion = CURRENT_VERSION,
+	Currency = 100,
+	Inventory = {},
+	Equipped = nil,
+	Dirty = false
+}
+
+local function DeepCopy(tbl)
+	local copy = {}
+	for k, v in pairs(tbl) do 
+		if type(v) == "table" then
+			copy[k] = DeepCopy(v)
+		else
+			copy[k] = v
+		end
+	end
+	return copy
+end
+
+local function SanitizeData(data)
+	
+	local clean = DeepCopy(DEFAULT_DATA)
+
+	if type(data) == "table" then
+		for k, v in pairs(data) do
+			clean[k] = v
+		end
+	end
+
+	data = clean
+	
+	if data.DataVersion == nil then
+		data.DataVersion = 1
+	end
+	
+	if type(data.Currency) ~= "number" then
+		data.Currency = 0
+	end
+	
+	if data.Currency < 0 then
+		data.Currency = 0
+	end
+	
+	if type(data.Inventory) ~= "table" then
+		data.Inventory = {}
+	end
+	
+	if data.Equipped ~= nil  and type(data.Equipped) ~= "string" then
+		data.Equipped = nil
+	end
+	data.Dirty = false
+	
+	return data
+	
+end
+
+function DataService:InitPlayer(player, loadData)
+	if playerData[player] then
+		warn("Player data already exists for:", player)
+	end
+	
+	local data = SanitizeData(loadData)
+	self:RunMigrations(data)
+	
+	playerData[player] = data
+end
+
+function DataService:Get(player)
+	return playerData[player]
+end
+
+function DataService:Set(player, key, value)
+	if key == "Currency" then
+		warn("Use UpdateCurrency for currency changes")
+	end
+	
+	local data = playerData[player]
+	if not data then return end
+	
+	data[key] = value
+	data.Dirty = true
+end
+
+function DataService:UpdateCurrency(player, delta)
+	local data = playerData[player]
+	if not data then return false end
+	if type(delta) ~= "number" then return false end
+
+	local newAmount = data.Currency + delta
+
+	if newAmount < 0 then
+		return false 
+	end
+
+	data.Currency = newAmount
+	data.Dirty = true
+
+	return true
+end
+
+function DataService:Merge(player, loadData)
+	local data = playerData[player]
+	if not data then return end
+	if type(loadData) ~= "table" then return end
+
+	for k, v in pairs(loadData) do
+		data[k] = v
+	end
+	self:RunMigrations(data)
+end
+
+function DataService:RunMigrations(data)
+	if type(data.DataVersion) ~= "number" then
+		data.DataVersion = 1
+	end
+
+	if data.DataVersion < CURRENT_VERSION then
+		data.DataVersion = CURRENT_VERSION
+	end
+end
+
+function DataService:MarkDirty(player)
+	local data = playerData[player]
+	if not data then return end
+	
+	data.Dirty = true
+end
+
+function DataService:ClearDirty(player)
+	local data = playerData[player]
+	if not data then return end
+
+	data.Dirty = false
+end
+
+function DataService:IsDirty(player)
+	local data = playerData[player]
+	if not data then return false end
+	
+	return data.Dirty
+end
+
+function DataService:GetSnapshot(player)
+	local data = playerData[player]
+	if not data then return nil end
+	
+	local copy = DeepCopy(data)
+	copy.Dirty = nil
+	return copy
+end
+
+function DataService:RemovePlayer(player)
+	playerData[player] = nil
+end
+
+return DataService
